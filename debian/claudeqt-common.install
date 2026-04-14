@@ -1,0 +1,4 @@
+# Phase 1: no shared data payloads yet. This file exists so dh_install
+# creates the claudeqt-common package with just the Debian metadata;
+# resource files (icons, desktop entry, templates, translations,
+# Python engine bridge) land here in Phase 2+ per phase-1.md §5.2.

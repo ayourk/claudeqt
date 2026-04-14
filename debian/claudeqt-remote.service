@@ -1,0 +1,51 @@
+[Unit]
+Description=ClaudeQt headless remote daemon
+Documentation=file:///usr/share/doc/claudeqt-remote/README.Debian
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/claudeqt-remote --config /etc/claudeqt/remote.conf
+User=claudeqt
+Group=claudeqt
+WorkingDirectory=/var/lib/claudeqt
+Restart=on-failure
+RestartSec=5
+
+# Hardware-supervised liveness: the daemon must sd_notify(WATCHDOG=1) at
+# least once every 30 s or systemd sends SIGABRT and Restart=on-failure
+# kicks in. Heartbeat thread inside the daemon pings every 10 s (3× safety
+# margin). See docs/phase-1.md §11 Decision 14 for the full liveness model.
+WatchdogSec=30
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Pre-accept IP allowlist — secure default shipped inline.
+# Admins extend the allowlist by dropping a file into
+# /etc/systemd/system/claudeqt-remote.service.d/allowlist.conf
+# with additional IPAddressAllow= lines; systemd merges list-valued
+# directives additively, so drop-ins ADD to (not replace) this base.
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+ReadWritePaths=/var/lib/claudeqt /etc/claudeqt/certs
+
+[Install]
+WantedBy=multi-user.target

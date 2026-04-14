@@ -1,0 +1,22 @@
+# macOS configure-only smoke test. Phase 1 stub per
+# docs/phase-1.md §9.2: configures CMake against Homebrew qt@6 but
+# does not compile. Phase 4 flips this to 'push'-triggered and
+# actually builds.
+name: macOS build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt6 via Homebrew
+        run: brew install qt@6 cmark-gfm
+      - name: CMake configure (no build)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
+            -DCLAUDEQT_BUILD_REMOTE=OFF \
+            -DBUILD_TESTING=OFF

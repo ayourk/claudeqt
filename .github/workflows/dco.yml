@@ -1,0 +1,21 @@
+# DCO signoff check — each commit in a PR must carry a
+# 'Signed-off-by:' trailer matching the author. Copied from HobbyCAD.
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  dco:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check DCO
+        uses: tim-actions/get-pr-commits@v1.3.1
+        id: pr-commits
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify Signed-off-by
+        uses: tim-actions/dco@v1.1.0
+        with:
+          commits: ${{ steps.pr-commits.outputs.commits }}

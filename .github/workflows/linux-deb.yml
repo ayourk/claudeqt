@@ -1,0 +1,40 @@
+# Debian 12 .deb builds (amd64 + arm64).
+#
+# Ubuntu is intentionally absent from this matrix — ClaudeQt's Ubuntu
+# distribution path is Launchpad (ppa:ayourk/claudeqt) per
+# docs/phase-1.md §9.1, and a GH Actions Ubuntu cell would be strictly
+# duplicative. The file name keeps 'linux-deb' for convention alignment
+# with HobbyCAD even though only Debian cells run here.
+#
+# Debian 12 containers can't pull from ppa:ayourk/claudeqt, so the
+# workflow must build the KF5 syntax-highlighting Qt6 backport from
+# source inside the container (Phase 2+ work — this file is a
+# placeholder that builds nothing yet).
+name: Debian .deb
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'debian/**'
+      - '.github/workflows/linux-deb.yml'
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: debian12, distro_name: bookworm, arch: amd64, runner: ubuntu-22.04,     container: debian:12 }
+          - { distro: debian12, distro_name: bookworm, arch: arm64, runner: ubuntu-22.04-arm, container: debian:12 }
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Phase 1 placeholder
+        run: echo "linux-deb.yml is a Phase 1 stub — wiring lands in Phase 2+."

@@ -1,0 +1,112 @@
+claudeqt-remote for Debian/Ubuntu
+==================================
+
+WHAT THIS PACKAGE IS
+--------------------
+claudeqt-remote is the server-side execution worker for ClaudeQt. It runs as
+a stateless daemon that accepts connections from the ClaudeQt desktop GUI
+(the "master"), receives per-turn session state over an encrypted JSON-RPC
+channel, invokes the Claude Code CLI to produce a response, and streams the
+result back. The master holds all persistent session data; this daemon does
+not.
+
+INTENDED DEPLOYMENT: CROSS-HOST
+-------------------------------
+claudeqt-remote is designed to run on a DIFFERENT machine than the one you
+run the ClaudeQt desktop app on — a build server, dev container, or
+workstation with privileged tools, elevated filesystem access, or hardware
+that your laptop doesn't have. Running it on the same box as the master is
+supported for development but not recommended: the privilege separation
+collapses, and the JSON-RPC roundtrip adds latency without buying isolation.
+
+THE "claudeqt" SYSTEM USER
+--------------------------
+The package creates a dedicated system user and group, both named "claudeqt",
+with home directory /var/lib/claudeqt and login shell /usr/sbin/nologin. The
+daemon runs as this user via its systemd unit. The user is unprivileged by
+default: no sudo rights, no supplementary group memberships, no write access
+outside /var/lib/claudeqt.
+
+GRANTING ELEVATED ACCESS (OPT-IN)
+---------------------------------
+If your workflow requires the daemon to run commands that need elevated
+privileges (e.g., 'systemctl restart nginx', 'docker ps', 'apt list'), you
+grant those rights manually.
+
+  Group membership
+  ----------------
+    sudo usermod -aG docker claudeqt
+    sudo usermod -aG www-data claudeqt
+    sudo systemctl restart claudeqt-remote
+
+  Sudoers drop-in (narrow whitelist)
+  ----------------------------------
+  Create /etc/sudoers.d/claudeqt with specific absolute-path entries:
+
+    claudeqt ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx
+    claudeqt ALL=(root) NOPASSWD: /usr/bin/apt-get update
+    claudeqt ALL=(root) NOPASSWD: /usr/bin/docker ps
+
+  Validate the file with 'sudo visudo -cf /etc/sudoers.d/claudeqt' before
+  saving. NEVER use 'NOPASSWD: ALL' — that defeats the whole purpose of the
+  unprivileged daemon account.
+
+WORKSPACE AND FILE ACCESS
+-------------------------
+When the master sends a project snapshot for a session, the daemon
+materializes it under /var/lib/claudeqt/workspace/<session-id>/ and points
+Claude at that directory as its working directory. Tool calls (Read, Write,
+Edit, Bash) operate inside that scratch tree. When the turn completes, diffs
+and outputs stream back to the master, and the scratch tree is reaped.
+
+File snapshots, diffs, and tool output streams are zstd-compressed
+end-to-end over the TLS/JSON-RPC transport.
+
+CLAUDE CLI AUTHENTICATION
+-------------------------
+The Claude Code CLI on the remote box needs its own OAuth login. You have
+two options:
+
+  1. Local install (one-time, at NEXT STEPS time after 'apt install'):
+         curl -fsSL https://claude.ai/install.sh | sudo -Hu claudeqt bash
+         sudo -Hu claudeqt /var/lib/claudeqt/.local/bin/claude /login
+
+     Only the first line is strictly required — /login is optional if you
+     plan to use option 2.
+
+  2. Share your desktop session's token at connect time from the ClaudeQt
+     GUI. When you connect to this remote for the first time, the desktop
+     app queries the daemon's auth state, displays it, and offers to
+     forward your local login token over the encrypted connection.
+
+NETWORK ACCESS
+--------------
+The shipped systemd unit defaults to IPAddressDeny=any + IPAddressAllow=localhost,
+so the daemon is locked to localhost out of the box. To expose it to a LAN
+range, create a drop-in file:
+
+    # /etc/systemd/system/claudeqt-remote.service.d/allowlist.conf
+    [Service]
+    IPAddressAllow=192.168.1.0/24
+    IPAddressAllow=10.8.0.0/24
+
+systemd merges IPAddressAllow= additively across the base unit and drop-ins,
+so the effective list becomes 'localhost + 192.168.1.0/24 + 10.8.0.0/24'. No
+edits to the shipped unit file; drop-ins survive package upgrades.
+
+DOAS ALTERNATIVE
+----------------
+If you ship opendoas instead of sudo, the install recipe becomes:
+
+    curl -fsSL https://claude.ai/install.sh | \
+        doas -u claudeqt env HOME=/var/lib/claudeqt bash
+
+    doas -u claudeqt env HOME=/var/lib/claudeqt \
+        /var/lib/claudeqt/.local/bin/claude /login
+
+The explicit 'env HOME=...' is required because doas has no -H flag and
+does not rewrite HOME by default.
+
+See also:
+  /usr/share/doc/claudeqt-remote/copyright
+  https://github.com/ayourk/claudeqt (upstream)

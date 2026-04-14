@@ -1,0 +1,16 @@
+# Windows MSVC configure-only smoke test. Phase 1 stub per
+# docs/phase-1.md §9.2: configures CMake against vcpkg static-md but
+# does not compile. Phase 4 flips this to 'push'-triggered and
+# actually builds.
+name: Windows MSVC build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  configure:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 1 placeholder
+        run: Write-Host "windows-build-msvc.yml is a Phase 1 stub — vcpkg wiring lands in Phase 4."

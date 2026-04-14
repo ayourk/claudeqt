@@ -1,0 +1,59 @@
+# ---- Planning / handover docs (not part of the public repo) ----
+docs/phase-*.md
+CLAUDE.md
+
+# ---- CMake / C++ build trees ----
+build/
+build-*/
+obj-*/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+*.exe
+
+# ---- debhelper / dh_* byproducts inside debian/ ----
+# The KSH Qt6 backport source package lives in
+# /wd8tb/ai/claudeqt/claudeqt-libs/kf5syntaxhighlighting-qt6/ (a sibling
+# of this repo per phase-1.md §2 build-workspace layout), so its debhelper
+# staging directories never appear here. Only the main claudeqt source
+# package writes into this tree's debian/.
+debian/.debhelper/
+debian/files
+debian/debhelper-build-stamp
+debian/*.debhelper.log
+debian/*.substvars
+debian/tmp/
+debian/claudeqt/
+debian/claudeqt-remote/
+debian/claudeqt-common/
+
+# ---- Python caches (if the embedded bridge ever grows a sidecar) ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# ---- Claude Code per-user settings ----
+.claude/settings.local.json
+
+# ---- Editor / OS cruft ----
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

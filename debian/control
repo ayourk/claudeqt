@@ -1,0 +1,77 @@
+Source: claudeqt
+Section: devel
+Priority: optional
+Maintainer: Aaron Yourk <ayourk@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.22~),
+               ninja-build,
+               pkg-config,
+               qt6-base-dev (>= 6.4.2~),
+               qt6-base-dev-tools,
+               qt6-svg-dev,
+               qt6-tools-dev,
+               qt6-l10n-tools,
+               libkf6syntaxhighlighting-dev | libkf5syntaxhighlighting-qt6-dev,
+               libcmark-gfm-dev,
+               libcmark-gfm-extensions-dev,
+               libsqlite3-dev (>= 3.45~),
+               libssl-dev,
+               libzstd-dev (>= 1.5.5~),
+               libsystemd-dev,
+               libpython3-dev (>= 3.12~),
+               python3-anyio
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/ayourk/claudeqt
+Vcs-Git: https://github.com/ayourk/claudeqt.git
+Vcs-Browser: https://github.com/ayourk/claudeqt
+
+Package: claudeqt
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         claudeqt-common (= ${source:Version})
+Recommends: claudeqt-remote
+Description: Native Qt6 GUI for Claude Code CLI
+ ClaudeQt provides a native desktop interface around the Claude Code
+ command-line tool, supporting session management, projects, MCP,
+ slash commands, and remote daemon connections.
+ .
+ Requires Claude Code CLI to be installed separately. Anthropic does not
+ ship a Debian package; install via the upstream native installer
+ (curl -fsSL https://claude.ai/install.sh | bash) or npm
+ (@anthropic-ai/claude-code). ClaudeQt detects the CLI at startup and
+ offers a first-run dialog with installation instructions if not found.
+
+Package: claudeqt-remote
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         claudeqt-common (= ${source:Version}),
+         adduser,
+         systemd,
+         openssl
+Description: Headless ClaudeQt remote daemon
+ Runs Claude Code CLI on a host and exposes it over JSON-RPC/TLS to a
+ remote ClaudeQt GUI. Ships with a systemd unit that uses IPAddressAllow
+ for pre-accept IP filtering and defaults to localhost-only until an
+ admin drops in an allowlist extension.
+ .
+ Creates a dedicated system user 'claudeqt' (shell /usr/sbin/nologin,
+ home /var/lib/claudeqt). After installing this package, follow the
+ NEXT STEPS hint printed by postinst to install Claude Code CLI under
+ the daemon identity; authentication can be done locally via 'claude
+ /login' OR deferred to connect time (the ClaudeQt GUI can forward your
+ desktop login over the encrypted channel — see README.Debian for both
+ paths). The daemon then picks up the binary at
+ /var/lib/claudeqt/.local/bin/claude automatically.
+
+Package: claudeqt-common
+Architecture: all
+Depends: ${misc:Depends},
+         python3 (>= 3.12),
+         python3-anyio
+Description: Shared data files for ClaudeQt
+ Icons, desktop entry, default CLAUDE.md templates, translations, and the
+ Python engine bridge package (claudeqt_engine) used by both claudeqt
+ and claudeqt-remote.

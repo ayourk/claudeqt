@@ -1,0 +1,92 @@
+#!/bin/sh
+# postinst for claudeqt-remote — see docs/phase-1.md §7.5.
+set -e
+
+case "$1" in
+    configure)
+        # Snapshot state BEFORE creating anything, so the NEXT STEPS
+        # decision below sees what was missing on arrival. Each flag
+        # is 1 if the resource was already present, 0 if absent.
+        HAD_HOME=0; HAD_CERT=0; HAD_CLAUDE=0; HAD_AUTH=0
+        [ -d /var/lib/claudeqt ] && HAD_HOME=1
+        [ -f /etc/claudeqt/certs/server.crt ] && HAD_CERT=1
+        if [ -x /var/lib/claudeqt/.local/bin/claude ]; then
+            HAD_CLAUDE=1
+            # Probe /login state via `claude auth status` (JSON is the
+            # default output format, offline ~170ms). grep -q is
+            # sufficient — we don't have jq in Essential, and any shape
+            # drift in the JSON false-negatives harmlessly into showing
+            # step 2 when it didn't strictly need to be shown.
+            if sudo -Hu claudeqt /var/lib/claudeqt/.local/bin/claude auth status 2>/dev/null \
+                 | grep -q '"loggedIn"[[:space:]]*:[[:space:]]*true'; then
+                HAD_AUTH=1
+            fi
+        fi
+
+        # Create system user+group if missing (idempotent).
+        # Shell is /usr/sbin/nologin; the install bootstrap uses
+        # `sudo -Hu claudeqt ...` which bypasses the passwd shell
+        # because sudo only consults it when `-i` is passed.
+        if ! getent passwd claudeqt >/dev/null; then
+            adduser --system --group \
+                --home /var/lib/claudeqt \
+                --shell /usr/sbin/nologin \
+                --gecos "ClaudeQt remote daemon" \
+                claudeqt
+        fi
+
+        # Ensure home skeleton exists with correct ownership+mode.
+        install -d -o claudeqt -g claudeqt -m 0750 /var/lib/claudeqt
+        install -d -o claudeqt -g claudeqt -m 0755 /var/lib/claudeqt/.local
+        install -d -o claudeqt -g claudeqt -m 0755 /var/lib/claudeqt/.local/bin
+        install -d -o claudeqt -g claudeqt -m 0755 /var/lib/claudeqt/.local/share
+        install -d -o claudeqt -g claudeqt -m 0700 /var/lib/claudeqt/.config
+
+        # Config + certs dir (root-owned, claudeqt group-readable).
+        install -d -o root -g claudeqt -m 0750 /etc/claudeqt
+        install -d -o root -g claudeqt -m 0750 /etc/claudeqt/certs
+
+        # Generate self-signed Ed25519 TLS cert if missing.
+        if [ "$HAD_CERT" = "0" ]; then
+            openssl genpkey -algorithm ED25519 \
+                -out /etc/claudeqt/certs/server.key
+            openssl req -new -x509 -key /etc/claudeqt/certs/server.key \
+                -out /etc/claudeqt/certs/server.crt -days 3650 \
+                -subj "/CN=claudeqt-remote" \
+                -addext "subjectAltName=DNS:$(hostname),IP:127.0.0.1"
+            chown root:claudeqt /etc/claudeqt/certs/server.key \
+                                /etc/claudeqt/certs/server.crt
+            chmod 0640 /etc/claudeqt/certs/server.key
+            chmod 0644 /etc/claudeqt/certs/server.crt
+        fi
+
+        # Print NEXT STEPS hint, filtered to steps that still apply.
+        if [ "$HAD_HOME" = "0" ] || [ "$HAD_CERT" = "0" ] || \
+           [ "$HAD_CLAUDE" = "0" ] || [ "$HAD_AUTH" = "0" ]; then
+            echo ""
+            echo "NEXT STEPS:"
+            N=1
+            if [ "$HAD_CLAUDE" = "0" ]; then
+                echo "  ${N}. Install Claude Code CLI under the claudeqt identity:"
+                echo "       curl -fsSL https://claude.ai/install.sh | sudo -Hu claudeqt bash"
+                N=$((N + 1))
+            fi
+            if [ "$HAD_AUTH" = "0" ]; then
+                echo "  ${N}. Authenticate it (OPTIONAL — you can instead share your"
+                echo "     desktop login at connect time from the ClaudeQt GUI; see"
+                echo "     /usr/share/doc/claudeqt-remote/README.Debian for both paths):"
+                echo "       sudo -Hu claudeqt /var/lib/claudeqt/.local/bin/claude /login"
+                N=$((N + 1))
+            fi
+            echo "  ${N}. Configure /etc/claudeqt/remote.conf (bind_addr, allowlist)"
+            N=$((N + 1))
+            echo "  ${N}. Enable the daemon:"
+            echo "       sudo systemctl enable --now claudeqt-remote"
+            echo ""
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
