@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ClaudeQt
+GenericName=Claude Code GUI
+Comment=Native Qt6 desktop client for Claude Code CLI
+Exec=claudeqt
+Icon=claudeqt
+Terminal=false
+Categories=Development;IDE;TextEditor;
+StartupNotify=true
+StartupWMClass=claudeqt
+Keywords=claude;code;ai;editor;llm;

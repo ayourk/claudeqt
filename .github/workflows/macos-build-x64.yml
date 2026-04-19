@@ -1,0 +1,95 @@
+# macOS x86_64 build on self-hosted Mac Mini (Intel).
+#
+# Builds ClaudeQt for x86_64 macOS using vcpkg static linking.
+# Runs on the self-hosted Mac Mini 2018 (i7-8700B, Intel).
+# Restricted to repo owner to protect the self-hosted runner.
+
+name: macOS x64 build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  build-x64:
+    name: ClaudeQt macOS (x64)
+    runs-on: [self-hosted, macOS, X64]
+    if: github.actor == 'ayourk'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build tools
+        run: |
+          brew install ninja autoconf autoconf-archive automake libtool librsvg 2>/dev/null || true
+
+      - name: Export GitHub Actions cache variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Setup vcpkg
+        run: |
+          if [ ! -d "$HOME/vcpkg" ]; then
+            git clone --branch 2026.02.27 https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          fi
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+          echo "$HOME/vcpkg" >> $GITHUB_PATH
+
+      - name: Clear vcpkg registry cache
+        run: rm -rf ~/.cache/vcpkg/registries
+
+      - name: Install x86_64 dependencies
+        run: |
+          vcpkg install \
+            --triplet x64-osx-static \
+            --host-triplet=x64-osx-static \
+            --overlay-triplets=${{ github.workspace }}/vcpkg-custom-triplets \
+            --x-install-root=vcpkg_installed \
+            --clean-buildtrees-after-build
+
+      - name: Build x86_64
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-osx-static \
+            -DVCPKG_HOST_TRIPLET=x64-osx-static \
+            -DVCPKG_OVERLAY_TRIPLETS=${{ github.workspace }}/vcpkg-custom-triplets \
+            -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DAPP_SYSTEM_INTEGRATION=OFF \
+            -DAPP_USE_CMARK_GFM=OFF \
+            -DBUILD_TESTS=OFF
+          cmake --build build --config Release
+
+      - name: Verify binary
+        run: |
+          exe=$(find build -name "claudeqt" -type f | head -1)
+          if [ -n "$exe" ]; then
+            echo "Built: $exe ($(du -h "$exe" | cut -f1))"
+            file "$exe"
+          else
+            echo "claudeqt binary not found"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-macos-x64
+          path: build/
+          retention-days: 30
+          if-no-files-found: error

@@ -17,7 +17,7 @@ RestartSec=5
 # Hardware-supervised liveness: the daemon must sd_notify(WATCHDOG=1) at
 # least once every 30 s or systemd sends SIGABRT and Restart=on-failure
 # kicks in. Heartbeat thread inside the daemon pings every 10 s (3× safety
-# margin). See docs/phase-1.md §11 Decision 14 for the full liveness model.
+# margin).
 WatchdogSec=30
 
 # Hardening

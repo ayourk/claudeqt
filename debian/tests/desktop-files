@@ -1,0 +1,35 @@
+#!/bin/sh
+# DEP-8 test: confirm claudeqt-common installs the desktop
+# integration payload in the right tree positions and that each
+# artifact passes its format validator. Locks in the decision to
+# ship both the FreeDesktop `.desktop` entry and the classic
+# Debian `menu` file — if someone later drops one of the two
+# (e.g. to quiet lintian), this test fails before the .deb
+# reaches users.
+set -eu
+
+svg=/usr/share/icons/hicolor/scalable/apps/claudeqt.svg
+desktop=/usr/share/applications/claudeqt.desktop
+menu=/usr/share/menu/claudeqt
+
+test -f "$svg"
+test -f "$desktop"
+test -f "$menu"
+
+# FreeDesktop side — validate the .desktop entry. Hints (non-zero
+# exit only on actual errors) may vary between desktop-file-utils
+# versions; treat any hint about the Utility category as accepted.
+desktop-file-validate "$desktop"
+
+# Spot-check key fields so a silent overwrite cannot smuggle a
+# broken Exec= or wrong Icon= past us.
+grep -q '^Exec=claudeqt$' "$desktop"
+grep -q '^Icon=claudeqt$' "$desktop"
+grep -q '^Type=Application$' "$desktop"
+
+# Classic Debian menu side — no official validator, but the format
+# is line-prefixed ?package(<pkg>):. If the prefix is wrong,
+# update-menus silently ignores the entry and fluxbox loses the
+# app — hence a grep assertion on the prefix.
+grep -q '^?package(claudeqt):' "$menu"
+grep -q 'command="/usr/bin/claudeqt"' "$menu"

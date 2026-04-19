@@ -1,0 +1,121 @@
+# .github/workflows/linux-arch.yml
+#
+# Build ClaudeQt pacman packages for Arch-based distros.
+# Works on: Arch, CachyOS, Manjaro, EndeavourOS, SteamOS (unlocked).
+# Both x86_64 and aarch64 are supported.
+
+name: Linux Arch
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  arch:
+    name: ClaudeQt Arch (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            container: archlinux:base-devel
+            artifact_name: claudeqt-arch-x86_64
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            container: agners/archlinuxarm:latest
+            artifact_name: claudeqt-arch-aarch64
+
+    steps:
+      - name: Setup pacman
+        run: |
+          mkdir -p /etc/pacman.d
+          echo 'DisableSandbox' >> /etc/pacman.conf || true
+          pacman-key --init
+          pacman-key --populate archlinux || pacman-key --populate archlinuxarm || true
+          pacman -Syu --noconfirm git base-devel
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          pacman -S --noconfirm --needed \
+            cmake ninja pkgconf \
+            qt6-base qt6-svg qt6-tools \
+            syntax-highlighting \
+            cmark-gfm \
+            sqlite \
+            openssl zstd \
+            systemd-libs
+
+      - name: Create PKGBUILD
+        run: |
+          VERSION=$(grep 'project.*VERSION' CMakeLists.txt | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/' | head -1)
+          VERSION=${VERSION:-0.0.1}
+
+          mkdir -p pkgbuild
+          cat > pkgbuild/PKGBUILD << EOF
+          # Maintainer: Aaron Yourk <ayourk@gmail.com>
+          pkgname=claudeqt
+          pkgver=${VERSION}
+          pkgrel=1
+          pkgdesc="Native Qt6 GUI for the Claude Code CLI"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/ayourk/claudeqt"
+          license=('GPL-3.0-only')
+          depends=(
+            'qt6-base'
+            'qt6-svg'
+            'syntax-highlighting'
+            'sqlite'
+            'openssl'
+            'zstd'
+          )
+          makedepends=(
+            'cmake'
+            'ninja'
+            'qt6-tools'
+            'cmark-gfm'
+            'systemd-libs'
+          )
+          source=()
+
+          build() {
+            cd "\$startdir/.."
+            cmake -B build -G Ninja \\
+              -DCMAKE_BUILD_TYPE=Release \\
+              -DCMAKE_INSTALL_PREFIX=/usr \\
+              -DAPP_SYSTEM_INTEGRATION=ON \\
+              -DBUILD_TESTS=OFF
+            cmake --build build
+          }
+
+          package() {
+            cd "\$startdir/.."
+            DESTDIR="\$pkgdir" cmake --install build
+          }
+          EOF
+
+      - name: Build package
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          cd pkgbuild
+          su builder -c "makepkg -sf --noconfirm"
+          cp *.pkg.tar.zst ../ || cp *.pkg.tar.xz ../
+
+      - name: Upload package
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}-pkg
+          path: "*.pkg.tar.*"
+          retention-days: 30
+          if-no-files-found: error

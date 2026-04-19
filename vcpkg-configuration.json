@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "$comment": "Default-registry baseline e0edebd1 = tag 2026.02.27. claudeqt-vcpkg supplies ECM, KSH, qttools. hobbycad-vcpkg supplies qtbase (feature-gated, defaults off) and qtsvg.",
+  "default-registry": {
+    "kind": "builtin",
+    "baseline": "e0edebd1dc2d03cf7d02349df91de74ef4d0c00e"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/ayourk/claudeqt-vcpkg",
+      "baseline": "e03c6cb718896b4df6af364ce32b85c268157971",
+      "packages": ["extra-cmake-modules", "kf5-syntax-highlighting", "qttools"]
+    },
+    {
+      "kind": "git",
+      "repository": "https://github.com/ayourk/hobbycad-vcpkg",
+      "baseline": "5d02e1ece51d2df7e74ccbb494a310c6c53b7a76",
+      "packages": ["qtbase", "qtsvg"]
+    }
+  ]
+}

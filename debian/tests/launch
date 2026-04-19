@@ -1,0 +1,45 @@
+#!/bin/sh
+# DEP-8 test: confirm /usr/bin/claudeqt launches under offscreen Qt,
+# opens the SQLite database, runs the v0->v1 migration, and shows
+# MainWindow without crashing. Does NOT exercise UI interaction —
+# that is covered by the in-tree GUI test suites which run at build
+# time (BUILD_TESTS=ON in dev, OFF for the .deb). The real assertion
+# here is that $XDG_DATA_HOME/claudeqt/db.sqlite exists after the
+# run: Persistence::instance() is eager, so a present db.sqlite
+# proves the DAO opened storage and ran migrations end to end.
+set -eu
+
+test -x /usr/bin/claudeqt
+test -x /usr/bin/claudeqt-remote
+
+# Confirm KSyntaxHighlighting and SQLite are bound in DT_NEEDED —
+# the editor constructs Repository and the persistence layer
+# constructs QSqlDatabase on startup, so both must survive
+# -Wl,--as-needed linkage pruning.
+ldd /usr/bin/claudeqt | grep -q 'libKF5SyntaxHighlighting\.so'
+ldd /usr/bin/claudeqt | grep -q 'libsqlite3\.so'
+
+# autopkgtest guarantees AUTOPKGTEST_TMP is writable and
+# per-test-isolated. Point HOME and XDG_DATA_HOME there so Qt's
+# QStandardPaths::AppLocalDataLocation resolves inside the sandbox.
+export HOME="$AUTOPKGTEST_TMP"
+export XDG_DATA_HOME="$AUTOPKGTEST_TMP/xdg-data"
+export XDG_CONFIG_HOME="$AUTOPKGTEST_TMP/xdg-config"
+export XDG_CACHE_HOME="$AUTOPKGTEST_TMP/xdg-cache"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+
+# Offscreen QPA — no X server, no Wayland. timeout kills claudeqt
+# after a few seconds; the exit code is irrelevant because the real
+# assertion is the db.sqlite side effect. || true swallows whatever
+# timeout returns (124 on kill, signal code on child signal).
+export QT_QPA_PLATFORM=offscreen
+timeout 5 /usr/bin/claudeqt || true
+
+test -f "$XDG_DATA_HOME/claudeqt/db.sqlite"
+
+# Sanity-check that the migration ran to v1. schema_version is
+# written by migrateV0ToV1() in src/persistence/migrations.cpp.
+# sqlite3 CLI is pulled in by Depends: above so this is not guarded.
+version=$(sqlite3 "$XDG_DATA_HOME/claudeqt/db.sqlite" \
+    'SELECT version FROM schema_version')
+test "$version" = "1"

@@ -1,0 +1,11 @@
+Tests: launch
+Depends: @, sqlite3
+Restrictions: allow-stderr
+
+Tests: desktop-files
+Depends: @, desktop-file-utils
+Restrictions: allow-stderr
+
+Tests: remote-service
+Depends: @, systemd
+Restrictions: allow-stderr, isolation-container, needs-root

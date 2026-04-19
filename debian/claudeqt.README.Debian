@@ -1,0 +1,79 @@
+claudeqt for Debian/Ubuntu
+==========================
+
+WHAT THIS PACKAGE IS
+--------------------
+ClaudeQt is a native Qt6 desktop GUI for the Claude Code CLI. It provides
+a project/session tree, tabbed code editor with syntax highlighting, chat
+shell, multi-window support, and crash-safe persistence. ClaudeQt never
+executes shell commands itself — all AI interaction is delegated to the
+Claude Code CLI.
+
+CLAUDE CODE CLI DEPENDENCY
+--------------------------
+ClaudeQt requires the Claude Code CLI to be installed for AI interaction.
+The GUI shell works without it (you can manage projects, sessions, files,
+and settings), but submitting chat messages requires a working CLI.
+
+Anthropic does not ship a Debian package for the CLI. It is distributed
+via npm and requires Node.js.
+
+INSTALLING THE CLAUDE CODE CLI
+------------------------------
+1. Check whether Node.js is installed:
+
+       node --version
+
+   If not installed, use the NodeSource PPA or your preferred method:
+
+       curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+       sudo apt install nodejs
+
+2. Install the Claude Code CLI globally:
+
+       sudo npm install -g @anthropic-ai/claude-code
+
+3. Verify the installation:
+
+       claude --version
+
+   ClaudeQt requires Claude Code CLI version 2.1.97 or later.
+
+4. Authenticate:
+
+       claude auth login
+
+   Follow the browser-based OAuth flow to link your Anthropic account.
+
+VERIFYING CLI DETECTION
+-----------------------
+ClaudeQt searches for the 'claude' binary using the standard PATH lookup.
+If it is installed to a non-standard location, ensure that location is in
+your PATH before launching ClaudeQt.
+
+To verify ClaudeQt can find the CLI:
+
+    which claude && claude --version
+
+Both commands should succeed and the version should be >= 2.1.97.
+
+DATA STORAGE
+------------
+ClaudeQt stores all session data (projects, sessions, messages, file
+buffers, settings) in a SQLite database under:
+
+    $XDG_DATA_HOME/claudeqt/
+
+which defaults to ~/.local/share/claudeqt/ on most systems. The database
+uses WAL (Write-Ahead Logging) mode for crash safety.
+
+MULTI-WINDOW SUPPORT
+--------------------
+Multiple ClaudeQt windows can run simultaneously. A leader-elected IPC hub
+over Unix domain sockets coordinates cross-instance notifications so that
+changes in one window (new sessions, renamed projects, settings changes)
+appear in all windows automatically.
+
+See also:
+  /usr/share/doc/claudeqt/copyright
+  https://github.com/ayourk/claudeqt (upstream)

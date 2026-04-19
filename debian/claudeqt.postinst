@@ -1,0 +1,59 @@
+#!/bin/sh
+# postinst for claudeqt — GUI package CLI detection and setup hints.
+set -e
+
+case "$1" in
+    configure)
+        # Snapshot state BEFORE printing hints so we only show steps
+        # that are actually needed. Each flag is 1 if the resource
+        # was already present, 0 if absent.
+        HAD_NODE=0; HAD_CLAUDE=0; HAD_AUTH=0
+
+        if command -v node >/dev/null 2>&1; then
+            HAD_NODE=1
+        fi
+
+        if command -v claude >/dev/null 2>&1; then
+            HAD_CLAUDE=1
+            if claude auth status 2>/dev/null \
+                 | grep -q '"loggedIn"[[:space:]]*:[[:space:]]*true'; then
+                HAD_AUTH=1
+            fi
+        fi
+
+        # Print NEXT STEPS hint, filtered to steps that still apply.
+        if [ "$HAD_NODE" = "0" ] || [ "$HAD_CLAUDE" = "0" ] || \
+           [ "$HAD_AUTH" = "0" ]; then
+            echo ""
+            echo "NEXT STEPS:"
+            N=1
+            if [ "$HAD_NODE" = "0" ]; then
+                echo "  ${N}. Install Node.js (required for Claude Code CLI):"
+                echo "       curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -"
+                echo "       sudo apt install nodejs"
+                N=$((N + 1))
+            fi
+            if [ "$HAD_CLAUDE" = "0" ]; then
+                echo "  ${N}. Install Claude Code CLI (>= 2.1.97):"
+                echo "       sudo npm install -g @anthropic-ai/claude-code"
+                N=$((N + 1))
+            fi
+            if [ "$HAD_AUTH" = "0" ]; then
+                echo "  ${N}. Authenticate the CLI:"
+                echo "       claude auth login"
+                N=$((N + 1))
+            fi
+            echo ""
+            echo "  ClaudeQt works without the CLI (projects, sessions, editor,"
+            echo "  settings), but AI interaction requires a working Claude Code"
+            echo "  CLI with an authenticated session."
+            echo ""
+            echo "  See /usr/share/doc/claudeqt/README.Debian for details."
+            echo ""
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

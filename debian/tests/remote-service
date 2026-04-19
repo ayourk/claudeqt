@@ -1,0 +1,44 @@
+#!/bin/sh
+# DEP-8 test: confirm the claudeqt-remote postinst ran to
+# completion (system user + state directory + conffile in place)
+# and that the systemd unit reaches active state under a real
+# PID 1. The binary is currently a watchdog stub — this test
+# exercises the packaging scaffold (postinst, .service
+# hardening, sd_notify round-trip), not JSON-RPC or TLS. When
+# the real daemon lands later, this test will grow additional
+# assertions, not shrink.
+#
+# Restrictions: isolation-container (needs real PID 1 systemd),
+# needs-root (systemctl, getent against root-owned files).
+set -eu
+
+# postinst invariants — adduser --system, mkdir /var/lib/claudeqt,
+# install remote.conf as a conffile under /etc/claudeqt/.
+getent passwd claudeqt >/dev/null
+getent group claudeqt >/dev/null
+test -d /var/lib/claudeqt
+test "$(stat -c '%U' /var/lib/claudeqt)" = "claudeqt"
+test -f /etc/claudeqt/remote.conf
+
+# Unit file landed and the service manager knows about it.
+systemctl cat claudeqt-remote.service >/dev/null
+
+# Start the unit. The stub calls sd_notify(READY=1) before
+# entering its signalfd loop, so activation should complete
+# cleanly under Type=notify.
+systemctl start claudeqt-remote.service
+# Give sd_notify a beat to land in PID 1's journal.
+sleep 1
+systemctl is-active --quiet claudeqt-remote.service
+
+# Confirm the process is actually the stub binary (not a
+# systemd-held placeholder in maintenance mode).
+main_pid=$(systemctl show claudeqt-remote.service -p MainPID --value)
+test -n "$main_pid"
+test "$main_pid" != "0"
+readlink "/proc/$main_pid/exe" | grep -q 'claudeqt-remote'
+
+# Clean teardown — SIGTERM should land on the signalfd loop and
+# unwind without the watchdog timer firing.
+systemctl stop claudeqt-remote.service
+systemctl is-active --quiet claudeqt-remote.service && exit 1 || true

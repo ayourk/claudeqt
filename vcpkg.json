@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "$comment": "ClaudeQt vcpkg manifest — consumed by Windows release builds.",
+  "name": "claudeqt",
+  "version": "0.0.1",
+  "description": "Native Qt6 GUI for the Claude Code CLI",
+  "homepage": "https://github.com/ayourk/claudeqt",
+  "license": "GPL-3.0-only",
+  "dependencies": [
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": ["gui", "widgets", "network", "sql", "sql-sqlite",
+                    "openssl", "thread", "freetype", "harfbuzz",
+                    "jpeg", "png", "qtsvg"]
+    },
+    {
+      "name": "qttools",
+      "default-features": false,
+      "features": ["linguist"]
+    },
+    "sqlite3",
+    "cmark-gfm",
+    {
+      "name": "kf5-syntax-highlighting",
+      "features": ["gui", "qrc"]
+    }
+  ],
+  "$overrides-note": "Qt pinned to 6.4.2 for Linux parity. qtbase from hobbycad-vcpkg (feature-gated, defaults off). qttools from claudeqt-vcpkg (linguist-only, litehtml decoupled).",
+  "overrides": [
+    { "name": "qtbase",         "version": "6.4.2", "port-version": 25 },
+    { "name": "qttools",        "version": "6.4.2", "port-version": 8 }
+  ]
+}

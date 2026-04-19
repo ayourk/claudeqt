@@ -1,22 +1,136 @@
-# macOS configure-only smoke test. Phase 1 stub per
-# docs/phase-1.md §9.2: configures CMake against Homebrew qt@6 but
-# does not compile. Phase 4 flips this to 'push'-triggered and
-# actually builds.
+# macOS universal binary (arm64 + x86_64) via vcpkg static linking.
+#
+# Both architecture slices are built on an arm64 runner using vcpkg
+# static triplets. Apple Clang natively cross-compiles to x86_64
+# from arm64, so no Rosetta or separate runner is needed. The two
+# binaries are merged with lipo.
+#
+# All third-party dependencies are statically linked; only macOS
+# system frameworks remain dynamic. Deployment target is 10.14
+# (Mojave) — the floor set by Qt 6.4.2.
+#
+# Triggered manually for now; will move to push-triggered once the
+# self-hosted Mac Mini runner is set up.
+
 name: macOS build
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   workflow_dispatch:
 
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
 jobs:
-  configure:
+  universal:
+    name: ClaudeQt macOS (universal)
     runs-on: macos-14
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Qt6 via Homebrew
-        run: brew install qt@6 cmark-gfm
-      - name: CMake configure (no build)
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build tools
+        run: brew install ninja autoconf autoconf-archive automake libtool librsvg
+
+      - name: Export GitHub Actions cache variables
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Setup vcpkg
         run: |
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6)" \
-            -DCLAUDEQT_BUILD_REMOTE=OFF \
-            -DBUILD_TESTING=OFF
+          git clone --branch 2026.02.27 https://github.com/microsoft/vcpkg.git ~/vcpkg
+          ~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+          echo "$HOME/vcpkg" >> $GITHUB_PATH
+
+      - name: Clear vcpkg registry cache
+        run: rm -rf ~/.cache/vcpkg/registries
+
+      - name: Install arm64 dependencies
+        run: |
+          vcpkg install \
+            --triplet arm64-osx-static \
+            --host-triplet=arm64-osx-static \
+            --overlay-triplets=${{ github.workspace }}/vcpkg-custom-triplets \
+            --x-install-root=vcpkg_installed \
+            --clean-buildtrees-after-build
+
+      - name: Install x86_64 dependencies
+        run: |
+          vcpkg install \
+            --triplet x64-osx-static \
+            --host-triplet=x64-osx-static \
+            --overlay-triplets=${{ github.workspace }}/vcpkg-custom-triplets \
+            --x-install-root=vcpkg_installed \
+            --clean-buildtrees-after-build
+
+      - name: Build arm64
+        run: |
+          cmake -B build-arm64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx-static \
+            -DVCPKG_HOST_TRIPLET=arm64-osx-static \
+            -DVCPKG_OVERLAY_TRIPLETS=${{ github.workspace }}/vcpkg-custom-triplets \
+            -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DAPP_SYSTEM_INTEGRATION=OFF \
+            -DAPP_USE_CMARK_GFM=OFF \
+            -DBUILD_TESTS=OFF
+          cmake --build build-arm64 --config Release
+          cmake --install build-arm64 --prefix install-arm64
+
+      - name: Build x86_64
+        run: |
+          cmake -B build-x86_64 -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DVCPKG_TARGET_TRIPLET=x64-osx-static \
+            -DVCPKG_HOST_TRIPLET=x64-osx-static \
+            -DVCPKG_OVERLAY_TRIPLETS=${{ github.workspace }}/vcpkg-custom-triplets \
+            -DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DAPP_SYSTEM_INTEGRATION=OFF \
+            -DAPP_USE_CMARK_GFM=OFF \
+            -DBUILD_TESTS=OFF
+          cmake --build build-x86_64 --config Release
+          cmake --install build-x86_64 --prefix install-x86_64
+
+      - name: Create universal binary
+        run: |
+          cp -R install-arm64/ install-universal/
+
+          find install-arm64 -type f | while read arm64_file; do
+            rel="${arm64_file#install-arm64/}"
+            x86_file="install-x86_64/$rel"
+            out_file="install-universal/$rel"
+
+            if [ -f "$x86_file" ] && file "$arm64_file" | grep -q "Mach-O"; then
+              lipo -create "$arm64_file" "$x86_file" -output "$out_file" 2>/dev/null || \
+                echo "::warning::lipo failed for $rel, keeping arm64 only"
+            fi
+          done
+
+          exe=$(find install-universal -name "claudeqt" -type f | head -1)
+          echo "Universal binary:"
+          file "$exe"
+          lipo -archs "$exe"
+          echo "Size: $(du -h "$exe" | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-macos-universal
+          path: install-universal/
+          retention-days: 30
+          if-no-files-found: error

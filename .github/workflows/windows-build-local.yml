@@ -1,0 +1,108 @@
+# Windows MSVC static build on self-hosted Docker runner.
+#
+# Builds ClaudeQt using the local Win11Pro-Docker-x64 runner.
+# VS Build Tools 2022, CMake, Ninja, and Git are pre-installed.
+# vcpkg is cached locally between runs so Qt doesn't rebuild
+# from source every time.
+#
+# Restricted to repo owner to protect the self-hosted runner.
+
+name: Windows local build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ClaudeQt Windows (local x64)
+    runs-on: [self-hosted, Windows, X64]
+    if: github.actor == 'ayourk'
+
+    env:
+      TRIPLET: x64-windows-static-md
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install icon tools
+        shell: cmd
+        continue-on-error: true
+        run: choco install imagemagick -y --no-progress
+
+      - name: Setup vcpkg
+        shell: cmd
+        run: |
+          if not exist C:\vcpkg (
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          )
+          git -C C:\vcpkg checkout 2026.02.27
+          call C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Setup MSVC environment
+        shell: powershell
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c """$vcvars"" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+              echo "$($matches[1])=$($matches[2])" >> $env:GITHUB_ENV
+            }
+          }
+          Write-Host "MSVC environment exported to GITHUB_ENV"
+
+      - name: Install dependencies
+        shell: cmd
+        run: |
+          C:\vcpkg\vcpkg install ^
+            --overlay-triplets="%GITHUB_WORKSPACE%\vcpkg-custom-triplets" ^
+            --triplet=%TRIPLET% ^
+            --host-triplet=%TRIPLET% ^
+            --x-install-root="%GITHUB_WORKSPACE%\vcpkg_installed"
+
+      - name: Configure
+        shell: cmd
+        run: |
+          cmake -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+            -DVCPKG_TARGET_TRIPLET=%TRIPLET% ^
+            -DVCPKG_HOST_TRIPLET=%TRIPLET% ^
+            -DVCPKG_OVERLAY_TRIPLETS="%GITHUB_WORKSPACE%\vcpkg-custom-triplets" ^
+            -DVCPKG_INSTALLED_DIR="%GITHUB_WORKSPACE%\vcpkg_installed" ^
+            -DAPP_BUILD_REMOTE=OFF ^
+            -DAPP_SYSTEM_INTEGRATION=OFF ^
+            -DAPP_USE_CMARK_GFM=OFF ^
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build --config Release
+
+      - name: Verify binary
+        shell: powershell
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "claudeqt.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+          } else {
+            Write-Error "claudeqt.exe not found in build tree"
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-windows-x64-local
+          path: build/bin/
+          retention-days: 30
+          if-no-files-found: error

@@ -1,5 +1,5 @@
 #!/bin/sh
-# postinst for claudeqt-remote — see docs/phase-1.md §7.5.
+# postinst for claudeqt-remote.
 set -e
 
 case "$1" in

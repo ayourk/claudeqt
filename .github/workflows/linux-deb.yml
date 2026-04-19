@@ -1,15 +1,13 @@
 # Debian 12 .deb builds (amd64 + arm64).
 #
 # Ubuntu is intentionally absent from this matrix — ClaudeQt's Ubuntu
-# distribution path is Launchpad (ppa:ayourk/claudeqt) per
-# docs/phase-1.md §9.1, and a GH Actions Ubuntu cell would be strictly
-# duplicative. The file name keeps 'linux-deb' for convention alignment
-# with HobbyCAD even though only Debian cells run here.
+# distribution path is Launchpad (ppa:ayourk/claudeqt), and a GH
+# Actions Ubuntu cell would be strictly duplicative.
 #
-# Debian 12 containers can't pull from ppa:ayourk/claudeqt, so the
-# workflow must build the KF5 syntax-highlighting Qt6 backport from
-# source inside the container (Phase 2+ work — this file is a
-# placeholder that builds nothing yet).
+# Debian 12 has Qt 6.4.2, cmark-gfm, and SQLite 3.40 in stock repos
+# but ECM 5.103 (too old — need >= 5.115). ECM and KSH are built
+# from source inside the container.
+
 name: Debian .deb
 
 on:
@@ -27,14 +25,107 @@ on:
 
 jobs:
   build:
+    name: ClaudeQt .deb (${{ matrix.distro }}, ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { distro: debian12, distro_name: bookworm, arch: amd64, runner: ubuntu-22.04,     container: debian:12 }
-          - { distro: debian12, distro_name: bookworm, arch: arm64, runner: ubuntu-22.04-arm, container: debian:12 }
+          - { distro: debian12, arch: amd64, runner: ubuntu-22.04,     container: debian:12 }
+          - { distro: debian12, arch: arm64, runner: ubuntu-22.04-arm, container: debian:12 }
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
+
     steps:
-      - name: Phase 1 placeholder
-        run: echo "linux-deb.yml is a Phase 1 stub — wiring lands in Phase 2+."
+      - name: Install git
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq git ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          apt-get install -y -qq \
+            build-essential cmake ninja-build pkg-config perl \
+            debhelper fakeroot \
+            qt6-base-dev qt6-base-dev-tools qt6-svg-dev \
+            qt6-tools-dev qt6-tools-dev-tools qt6-l10n-tools \
+            libcmark-gfm-dev libcmark-gfm-extensions-dev \
+            libsqlite3-dev libssl-dev libzstd-dev \
+            libsystemd-dev
+
+      - name: Build ECM 5.115.0 from source
+        run: |
+          curl -sL -o /tmp/ecm.tar.xz \
+            https://download.kde.org/stable/frameworks/5.115/extra-cmake-modules-5.115.0.tar.xz
+          mkdir -p /tmp/ecm && tar -xJf /tmp/ecm.tar.xz -C /tmp/ecm --strip-components=1
+          cmake -B /tmp/ecm/build -S /tmp/ecm -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_HTML_DOCS=OFF \
+            -DBUILD_MAN_DOCS=OFF \
+            -DBUILD_QTHELP_DOCS=OFF
+          cmake --build /tmp/ecm/build
+          cmake --install /tmp/ecm/build
+
+      - name: Build KSH 5.115.0 from source
+        run: |
+          curl -sL -o /tmp/ksh.tar.xz \
+            https://download.kde.org/stable/frameworks/5.115/syntax-highlighting-5.115.0.tar.xz
+          mkdir -p /tmp/ksh && tar -xJf /tmp/ksh.tar.xz -C /tmp/ksh --strip-components=1
+          cmake -B /tmp/ksh/build -S /tmp/ksh -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_QCH=OFF \
+            -DBUILD_WITH_QT6=ON \
+            -DKSYNTAXHIGHLIGHTING_USE_GUI=ON
+          cmake --build /tmp/ksh/build
+          cmake --install /tmp/ksh/build
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DAPP_SYSTEM_INTEGRATION=ON \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Build .deb
+        run: |
+          DESTDIR=$(pwd)/deb-root cmake --install build
+          mkdir -p deb-root/DEBIAN
+
+          VERSION=$(grep 'project.*VERSION' CMakeLists.txt | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/' | head -1)
+          VERSION=${VERSION:-0.0.1}
+          ARCH=$(dpkg --print-architecture)
+
+          cat > deb-root/DEBIAN/control << EOF
+          Package: claudeqt
+          Version: ${VERSION}
+          Section: devel
+          Priority: optional
+          Architecture: ${ARCH}
+          Depends: libqt6core6 (>= 6.4), libqt6gui6, libqt6widgets6, libqt6svg6, libqt6sql6-sqlite, libsqlite3-0
+          Maintainer: Aaron Yourk <ayourk@gmail.com>
+          Description: Native Qt6 GUI for the Claude Code CLI
+           ClaudeQt is a native Qt6 desktop GUI for interacting with Claude via
+           the Claude Code CLI. Multi-window, multi-session, with a tabbed code
+           editor featuring KSyntaxHighlighting.
+          EOF
+
+          dpkg-deb --build deb-root "claudeqt_${VERSION}_${ARCH}.deb"
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-${{ matrix.distro }}-${{ matrix.arch }}-deb
+          path: "*.deb"
+          retention-days: 30
+          if-no-files-found: error

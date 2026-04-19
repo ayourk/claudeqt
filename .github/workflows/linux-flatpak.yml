@@ -1,0 +1,67 @@
+# .github/workflows/linux-flatpak.yml
+#
+# Build ClaudeQt Flatpak for universal Linux distribution.
+#
+# Uses the KDE 6.6 runtime which provides Qt6 and KSyntaxHighlighting.
+# Only cmark-gfm needs to be built as an extra module.
+# Both x86_64 and aarch64 are supported.
+
+name: Linux Flatpak
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    name: ClaudeQt Flatpak (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            artifact_name: claudeqt-flatpak-x86_64
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            artifact_name: claudeqt-flatpak-aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Flatpak and flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Add Flathub and install SDK
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.kde.Platform//6.6
+          flatpak install --user -y flathub org.kde.Sdk//6.6
+
+      - name: Build Flatpak
+        run: |
+          cp packaging/flatpak/org.claudeqt.ClaudeQt.yml .
+          flatpak-builder --user --force-clean --repo=repo \
+            builddir org.claudeqt.ClaudeQt.yml
+
+      - name: Create bundle
+        run: |
+          flatpak build-bundle repo ClaudeQt-${{ matrix.arch }}.flatpak \
+            org.claudeqt.ClaudeQt
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: "*.flatpak"
+          retention-days: 30
+          if-no-files-found: error

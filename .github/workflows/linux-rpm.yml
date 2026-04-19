@@ -1,0 +1,197 @@
+# .github/workflows/linux-rpm.yml
+#
+# Build ClaudeQt RPM packages for Fedora and RHEL-compatible distros.
+#
+# cmark-gfm is not packaged as a C library on Fedora or AlmaLinux,
+# so we build it from source in both. AlmaLinux 9 also lacks KF6
+# SyntaxHighlighting, so we build KSH 5.115.0 + ECM from source
+# for feature parity with Fedora.
+
+name: Linux RPM
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  rpm:
+    name: ClaudeQt RPM (${{ matrix.distro }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: fedora40
+            arch: x86_64
+            runner: ubuntu-22.04
+            container: fedora:40
+            artifact_name: claudeqt-fedora40-x64
+          - distro: fedora40
+            arch: aarch64
+            runner: ubuntu-22.04-arm
+            container: fedora:40
+            artifact_name: claudeqt-fedora40-arm64
+          - distro: almalinux9
+            arch: x86_64
+            runner: ubuntu-22.04
+            container: almalinux:9
+            artifact_name: claudeqt-almalinux9-x64
+          - distro: almalinux9
+            arch: aarch64
+            runner: ubuntu-22.04-arm
+            container: almalinux:9
+            artifact_name: claudeqt-almalinux9-arm64
+
+    steps:
+      - name: Install git
+        run: |
+          if command -v dnf &> /dev/null; then
+            dnf install -y git
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies (Fedora)
+        if: startsWith(matrix.distro, 'fedora')
+        run: |
+          dnf install -y \
+            gcc-c++ cmake ninja-build rpm-build \
+            pkg-config git curl \
+            qt6-qtbase-devel qt6-qtsvg-devel qt6-qttools-devel \
+            kf6-syntax-highlighting-devel \
+            extra-cmake-modules \
+            mesa-libGL-devel libxkbcommon-devel \
+            sqlite-devel openssl-devel libzstd-devel \
+            systemd-devel
+
+      - name: Install build dependencies (AlmaLinux 9)
+        if: startsWith(matrix.distro, 'almalinux')
+        run: |
+          dnf install -y epel-release
+          dnf config-manager --set-enabled crb
+          dnf swap -y curl-minimal curl || true
+
+          dnf install -y --allowerasing \
+            gcc-c++ cmake ninja-build rpm-build \
+            pkg-config git curl perl autoconf make \
+            qt6-qtbase-devel qt6-qtsvg-devel qt6-qttools-devel \
+            extra-cmake-modules \
+            mesa-libGL-devel libxkbcommon-devel \
+            openssl-devel libzstd-devel readline-devel \
+            systemd-devel
+
+      - name: Build SQLite 3.45.1 from source (AlmaLinux)
+        if: startsWith(matrix.distro, 'almalinux')
+        run: |
+          curl -sL -o /tmp/sqlite.tar.gz \
+            https://www.sqlite.org/2024/sqlite-autoconf-3450100.tar.gz
+          echo "cd9c27841b7a5932c9897651e20b86c701dd740556989b01ca596fcfa3d49a0a  /tmp/sqlite.tar.gz" | sha256sum -c
+          mkdir -p /tmp/sqlite && tar -xzf /tmp/sqlite.tar.gz -C /tmp/sqlite --strip-components=1
+          cd /tmp/sqlite
+          ./configure --prefix=/usr --disable-static
+          make -j$(nproc)
+          make install
+
+      - name: Build cmark-gfm from source
+        run: |
+          curl -sL -o /tmp/cmark-gfm.tar.gz \
+            https://github.com/github/cmark-gfm/archive/refs/tags/0.29.0.gfm.13.tar.gz
+          echo "5abc61798ebd9de5660bc076443c07abad2b8d15dbc11094a3a79644b8ad243a  /tmp/cmark-gfm.tar.gz" | sha256sum -c
+          mkdir -p /tmp/cmark-gfm && tar -xzf /tmp/cmark-gfm.tar.gz -C /tmp/cmark-gfm --strip-components=1
+          cmake -B /tmp/cmark-gfm/build -S /tmp/cmark-gfm -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMARK_TESTS=OFF \
+            -DCMARK_SHARED=ON \
+            -DCMARK_STATIC=OFF
+          cmake --build /tmp/cmark-gfm/build
+          cmake --install /tmp/cmark-gfm/build
+
+      - name: Build KSH 5.115.0 from source (AlmaLinux)
+        if: startsWith(matrix.distro, 'almalinux')
+        run: |
+          curl -sL -o /tmp/ksh.tar.xz \
+            https://download.kde.org/stable/frameworks/5.115/syntax-highlighting-5.115.0.tar.xz
+          mkdir -p /tmp/ksh && tar -xJf /tmp/ksh.tar.xz -C /tmp/ksh --strip-components=1
+          cmake -B /tmp/ksh/build -S /tmp/ksh -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_QCH=OFF \
+            -DBUILD_WITH_QT6=ON \
+            -DKSYNTAXHIGHLIGHTING_USE_GUI=ON
+          cmake --build /tmp/ksh/build
+          cmake --install /tmp/ksh/build
+
+      - name: Configure
+        env:
+          PKG_CONFIG_PATH: /usr/lib/pkgconfig:/usr/lib64/pkgconfig
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DAPP_SYSTEM_INTEGRATION=ON \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Create RPM
+        run: |
+          DESTDIR=$(pwd)/rpm-root cmake --install build
+
+          VERSION=$(grep 'project.*VERSION' CMakeLists.txt | sed -E 's/.*VERSION[[:space:]]+([0-9.]+).*/\1/' | head -1)
+          VERSION=${VERSION:-0.0.1}
+
+          mkdir -p rpmbuild/{SPECS,BUILD,RPMS,SRPMS}
+
+          cat > rpmbuild/SPECS/claudeqt.spec << EOF
+          Name:           claudeqt
+          Version:        ${VERSION}
+          Release:        1%{?dist}
+          Summary:        Native Qt6 GUI for the Claude Code CLI
+          License:        GPL-3.0-only
+          URL:            https://github.com/ayourk/claudeqt
+
+          %description
+          ClaudeQt is a native Qt6 desktop GUI for interacting with Claude via
+          the Claude Code CLI. Multi-window, multi-session, with a tabbed code
+          editor featuring KSyntaxHighlighting.
+
+          %install
+          cp -a %{_builddir}/rpm-root/* %{buildroot}/
+
+          %files
+          /usr/bin/claudeqt
+          /usr/share/applications/claudeqt.desktop
+          /usr/share/icons/hicolor/*/apps/claudeqt.*
+          /usr/share/menu/claudeqt
+
+          %changelog
+          * $(date '+%a %b %d %Y') Aaron Yourk <ayourk@gmail.com> - ${VERSION}-1
+          - Automated build from CI
+          EOF
+
+          cp -a rpm-root rpmbuild/BUILD/
+
+          rpmbuild --define "_topdir $(pwd)/rpmbuild" \
+                   --define "_builddir $(pwd)/rpmbuild/BUILD" \
+                   -bb rpmbuild/SPECS/claudeqt.spec
+
+          find rpmbuild/RPMS -name "*.rpm" -exec cp {} . \;
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}-rpm
+          path: "*.rpm"
+          retention-days: 30
+          if-no-files-found: error

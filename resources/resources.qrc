@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/icons">
+    <file alias="app.svg">icons/app.svg</file>
+    <file alias="gear.svg">icons/gear.svg</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,109 @@
+# .github/workflows/linux-appimage.yml
+#
+# Build ClaudeQt AppImage for x86_64 and arm64.
+#
+# Built on Ubuntu 22.04 (glibc 2.35) for maximum compatibility.
+# Runs on most Linux distros from 2022 onward: Ubuntu 22.04+,
+# Fedora 36+, Debian 12+, Arch, openSUSE Tumbleweed, etc.
+
+name: Linux AppImage
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  appimage:
+    name: ClaudeQt AppImage (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            linuxdeploy_arch: x86_64
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            linuxdeploy_arch: aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Add ClaudeQt PPA
+        run: |
+          sudo add-apt-repository -y ppa:ayourk/claudeqt
+          echo 'Package: *
+          Pin: release o=LP-PPA-ayourk-claudeqt
+          Pin-Priority: 1001' | sudo tee /etc/apt/preferences.d/claudeqt-ppa
+          sudo apt-get update
+
+      - name: Remove stock Qt 6.2
+        run: |
+          sudo apt-get remove -y 'libqt6*' 'qt6-*' 2>/dev/null || true
+          sudo apt-get autoremove -y
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get install -y \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev qt6-base-dev-tools qt6-svg-dev \
+            qt6-tools-dev qt6-tools-dev-tools qt6-l10n-tools \
+            libkf5syntaxhighlighting-qt6-dev \
+            libcmark-gfm-dev libcmark-gfm-extensions-dev \
+            libsqlite3-dev libssl-dev libzstd-dev \
+            libsystemd-dev \
+            librsvg2-bin libfuse2 file
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DAPP_SYSTEM_INTEGRATION=ON \
+            -DAPP_BUILD_REMOTE=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Install to AppDir
+        run: cmake --install build --prefix AppDir/usr
+
+      - name: Download linuxdeploy tools
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.linuxdeploy_arch }}.AppImage
+          chmod +x linuxdeploy-${{ matrix.linuxdeploy_arch }}.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${{ matrix.linuxdeploy_arch }}.AppImage
+          chmod +x linuxdeploy-plugin-qt-${{ matrix.linuxdeploy_arch }}.AppImage
+
+      - name: Create AppImage
+        env:
+          QMAKE: /usr/bin/qmake6
+          QT_SELECT: qt6
+        run: |
+          ./linuxdeploy-${{ matrix.linuxdeploy_arch }}.AppImage \
+            --appdir AppDir \
+            --plugin qt \
+            --output appimage \
+            --desktop-file AppDir/usr/share/applications/claudeqt.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/scalable/apps/claudeqt.svg
+
+          for f in ClaudeQt*.AppImage; do
+            target="ClaudeQt-${{ matrix.arch }}.AppImage"
+            [ "$f" != "$target" ] && mv "$f" "$target" || true
+          done
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-linux-${{ matrix.arch }}-appimage
+          path: ClaudeQt-${{ matrix.arch }}.AppImage
+          retention-days: 30
+          if-no-files-found: error

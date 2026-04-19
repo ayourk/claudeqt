@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Phase 1 stub per docs/phase-1.md §8.3: sd_notify(READY=1) then a
-// signalfd+timerfd poll loop that pings WATCHDOG=1 every 10 s against
-// the systemd unit's WatchdogSec=30 ceiling (3× safety margin). SIGTERM
-// or SIGINT triggers sd_notify(STOPPING=1) + clean exit. No JSON-RPC,
-// no TLS, no worker pool — the real daemon arrives in Phase 6.
+// Watchdog-only stub: sd_notify(READY=1) then a signalfd+timerfd
+// poll loop that pings WATCHDOG=1 every 10 s against the systemd
+// unit's WatchdogSec=30 ceiling (3× safety margin). SIGTERM or
+// SIGINT triggers sd_notify(STOPPING=1) + clean exit. No JSON-RPC,
+// no TLS, no worker pool — the real daemon is future work.
 //
-// The file is deliberately not a "return 0;" one-liner because the §12
-// DoD watchdog fault-injection test needs a live Type=notify process to
-// exercise the liveness path end to end from day one.
+// The file is deliberately not a "return 0;" one-liner because the
+// watchdog fault-injection DEP-8 test needs a live Type=notify
+// process to exercise the liveness path end to end.
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -49,7 +49,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
         return 1;
     }
 
-    sd_notify(0, "READY=1\nSTATUS=Phase 1 stub — watchdog-only");
+    sd_notify(0, "READY=1\nSTATUS=watchdog-only stub");
 
     pollfd pfds[2] = {
         {sfd, POLLIN, 0},

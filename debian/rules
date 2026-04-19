@@ -1,8 +1,8 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 #
-# See docs/phase-1.md §7.2 for the rationale. dh-cmake with
-# cmake+ninja; system integration on; tests off (Phase 1 has none yet).
+# dh-cmake with cmake+ninja; system integration on; tests off for
+# the packaging build.
 
 include /usr/share/dpkg/architecture.mk
 
@@ -18,12 +18,13 @@ export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 override_dh_auto_configure:
 	dh_auto_configure -- \
 	    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-	    -DCLAUDEQT_SYSTEM_INTEGRATION=ON \
-	    -DCLAUDEQT_BUILD_REMOTE=ON \
-	    -DBUILD_TESTING=OFF
+	    -DAPP_SYSTEM_INTEGRATION=ON \
+	    -DAPP_BUILD_REMOTE=ON \
+	    -DBUILD_TESTS=OFF
 
 override_dh_auto_test:
-	# No tests built in Phase 1.
+	# Tests are not built in the package; dev builds enable them
+	# via -DBUILD_TESTS=ON.
 
 override_dh_missing:
 	dh_missing --fail-missing

@@ -4,7 +4,7 @@
 # The top-level CMakeLists.txt already does the pkg_check_modules call
 # inline; this module is a place to hang the fallback logic for
 # platforms (macOS Homebrew, Windows vcpkg) that ship cmark-gfm via
-# a CMake package config instead of pkg-config. Phase 2+ work.
+# a CMake package config instead of pkg-config.
 
 if(NOT TARGET PkgConfig::CMARK_GFM)
     find_package(PkgConfig QUIET)

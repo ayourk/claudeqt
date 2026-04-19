@@ -20,7 +20,7 @@ Build-Depends: debhelper-compat (= 13),
                libsystemd-dev,
                libpython3-dev (>= 3.12~),
                python3-anyio
-Standards-Version: 4.7.0
+Standards-Version: 3.9.5
 Rules-Requires-Root: no
 Homepage: https://github.com/ayourk/claudeqt
 Vcs-Git: https://github.com/ayourk/claudeqt.git
@@ -30,7 +30,8 @@ Package: claudeqt
 Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
-         claudeqt-common (= ${source:Version})
+         claudeqt-common (= ${source:Version}),
+         libqt6sql6-sqlite
 Recommends: claudeqt-remote
 Description: Native Qt6 GUI for Claude Code CLI
  ClaudeQt provides a native desktop interface around the Claude Code
@@ -69,8 +70,10 @@ Description: Headless ClaudeQt remote daemon
 Package: claudeqt-common
 Architecture: all
 Depends: ${misc:Depends},
+         hicolor-icon-theme,
          python3 (>= 3.12),
          python3-anyio
+Recommends: menu
 Description: Shared data files for ClaudeQt
  Icons, desktop entry, default CLAUDE.md templates, translations, and the
  Python engine bridge package (claudeqt_engine) used by both claudeqt

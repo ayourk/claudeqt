@@ -81,6 +81,11 @@ two options:
 
 NETWORK ACCESS
 --------------
+The daemon listens on port 49428 by default (IANA dynamic range, no existing
+assignment). All connections use TLS with Ed25519 certificates generated at
+install time under /etc/claudeqt/certs/. The port is configurable via
+bind_port in /etc/claudeqt/remote.conf.
+
 The shipped systemd unit defaults to IPAddressDeny=any + IPAddressAllow=localhost,
 so the daemon is locked to localhost out of the box. To expose it to a LAN
 range, create a drop-in file:

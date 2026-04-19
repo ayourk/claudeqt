@@ -1,16 +1,153 @@
-# Windows MSVC configure-only smoke test. Phase 1 stub per
-# docs/phase-1.md §9.2: configures CMake against vcpkg static-md but
-# does not compile. Phase 4 flips this to 'push'-triggered and
-# actually builds.
+# Windows MSVC release build via vcpkg.
+#
+# Installs all dependencies from the vcpkg manifest (vcpkg.json +
+# vcpkg-configuration.json) using the x64-windows-static-md custom
+# triplet, then configures and builds ClaudeQt with CMake/Ninja.
+#
+# MSVC environment is set up early so every subsequent step has
+# cl.exe, link.exe, and Ninja on PATH. VCPKG_ROOT is pinned to
+# C:\vcpkg (not VS's bundled copy) via a dedicated step that runs
+# after ilammy/msvc-dev-cmd.
+
 name: Windows MSVC build
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - 'vcpkg-custom-triplets/**'
+      - '.github/workflows/windows-build-msvc.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - 'vcpkg-custom-triplets/**'
+      - '.github/workflows/windows-build-msvc.yml'
   workflow_dispatch:
 
 jobs:
-  configure:
-    runs-on: windows-2022
+  build:
+    runs-on: windows-latest
+    env:
+      TRIPLET: x64-windows-static-md
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Phase 1 placeholder
-        run: Write-Host "windows-build-msvc.yml is a Phase 1 stub — vcpkg wiring lands in Phase 4."
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          $before = (Get-PSDrive C).Free / 1GB
+          $dirs = @(
+            "C:\Android",
+            "C:\SeleniumWebDrivers",
+            "C:\imagemagick",
+            "C:\Modules\az_*",
+            "C:\Program Files\dotnet\sdk",
+            "C:\Program Files\dotnet\shared",
+            "C:\Program Files\MongoDB",
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\hostedtoolcache\CodeQL",
+            "C:\hostedtoolcache\Java*",
+            "C:\hostedtoolcache\PyPy",
+            "C:\hostedtoolcache\Ruby",
+            "C:\hostedtoolcache\go",
+            "C:\hostedtoolcache\node",
+            "C:\vcpkg"
+          )
+          foreach ($d in $dirs) {
+            if (Test-Path $d) {
+              Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue
+            }
+          }
+          $after = (Get-PSDrive C).Free / 1GB
+          Write-Host ("Freed {0:N1} GB ({1:N1} -> {2:N1} GB free)" -f ($after - $before), $before, $after)
+
+      - name: Install icon tools
+        shell: cmd
+        run: choco install imagemagick -y --no-progress
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Pin VCPKG_ROOT
+        shell: pwsh
+        run: |
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+
+      - name: Bootstrap vcpkg
+        shell: cmd
+        run: |
+          git clone --branch 2026.02.27 https://github.com/microsoft/vcpkg.git C:\vcpkg
+          call C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg_installed
+          key: vcpkg-${{ env.TRIPLET }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+          restore-keys: |
+            vcpkg-${{ env.TRIPLET }}-
+
+      - name: Install dependencies
+        shell: cmd
+        run: |
+          C:\vcpkg\vcpkg install ^
+            --overlay-triplets="%GITHUB_WORKSPACE%\vcpkg-custom-triplets" ^
+            --triplet=%TRIPLET% ^
+            --host-triplet=%TRIPLET% ^
+            --x-install-root="%GITHUB_WORKSPACE%\vcpkg_installed"
+
+      - name: Configure
+        shell: cmd
+        run: |
+          cmake -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+            -DVCPKG_TARGET_TRIPLET=%TRIPLET% ^
+            -DVCPKG_HOST_TRIPLET=%TRIPLET% ^
+            -DVCPKG_OVERLAY_TRIPLETS="%GITHUB_WORKSPACE%\vcpkg-custom-triplets" ^
+            -DVCPKG_INSTALLED_DIR="%GITHUB_WORKSPACE%\vcpkg_installed" ^
+            -DAPP_BUILD_REMOTE=OFF ^
+            -DAPP_SYSTEM_INTEGRATION=OFF ^
+            -DAPP_USE_CMARK_GFM=OFF ^
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        shell: cmd
+        run: cmake --build build --config Release
+
+      - name: Verify binary
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter "claudeqt.exe" | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Built: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 1)) MB)"
+          } else {
+            Write-Error "claudeqt.exe not found in build tree"
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: claudeqt-windows-x64
+          path: build/bin/
+          retention-days: 30
+          if-no-files-found: error

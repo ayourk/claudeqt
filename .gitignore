@@ -1,5 +1,7 @@
-# ---- Planning / handover docs (not part of the public repo) ----
+# ---- Planning / design docs (not part of the public repo) ----
 docs/phase-*.md
+docs/ARCHITECTURE.md
+docs/multi-instance-hub.md
 CLAUDE.md
 
 # ---- CMake / C++ build trees ----
@@ -22,15 +24,15 @@ compile_commands.json
 *.exe
 
 # ---- debhelper / dh_* byproducts inside debian/ ----
-# The KSH Qt6 backport source package lives in
-# /wd8tb/ai/claudeqt/claudeqt-libs/kf5syntaxhighlighting-qt6/ (a sibling
-# of this repo per phase-1.md §2 build-workspace layout), so its debhelper
-# staging directories never appear here. Only the main claudeqt source
-# package writes into this tree's debian/.
+# The KSH Qt6 backport source package lives in a sibling directory
+# outside this git root, so its debhelper staging directories never
+# appear here. Only the main claudeqt source package writes into
+# this tree's debian/.
 debian/.debhelper/
 debian/files
 debian/debhelper-build-stamp
 debian/*.debhelper.log
+debian/*.debhelper
 debian/*.substvars
 debian/tmp/
 debian/claudeqt/

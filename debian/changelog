@@ -1,31 +1,35 @@
 claudeqt (0.0.1-0qt6~ppa1~noble1) noble; urgency=medium
 
-  * Phase 1 scaffold: initial source package layout per
-    docs/phase-1.md §5.2. Ships three binary packages — claudeqt
-    (GUI), claudeqt-remote (headless daemon), claudeqt-common
-    (arch:all shared data) — built against the KF5 syntax-highlighting
-    Qt6 backport shipped in the same PPA (kf5syntaxhighlighting-qt6).
-  * claudeqt is a QLabel stub at this phase; src/app/main.cpp only
-    validates that the CMake graph + Qt6 + KF5-qt6 + cmark-gfm +
-    libsqlite3 + Python3 link together cleanly and that the
-    packaging path produces a runnable ELF.
-  * claudeqt-remote is the signalfd+timerfd+sd_notify watchdog stub
-    described in phase-1.md §8.3 — Type=notify, WatchdogSec=30,
-    10 s WATCHDOG=1 cadence — so the §12 DoD fault-injection test
-    has a real live daemon to poke from day one.
+  * Initial source package. Ships three binary packages —
+    claudeqt (GUI), claudeqt-remote (headless daemon),
+    claudeqt-common (arch:all shared data) — built against the KF5
+    syntax-highlighting Qt6 backport shipped in the same PPA
+    (kf5syntaxhighlighting-qt6).
+  * claudeqt is the full desktop skeleton: project/session tree
+    with drag-and-drop and sort-order modes, tabbed code editor
+    with KSyntaxHighlighting, auto-growing chat input with draft
+    persistence, settings dialog, dark theme, leader-elected IPC
+    hub for multi-window sync. Claude CLI wire integration is not
+    yet included; chat drafts persist locally but are not sent.
+  * claudeqt-remote is a signalfd+timerfd+sd_notify watchdog stub:
+    Type=notify, WatchdogSec=30, 10 s WATCHDOG=1 cadence. The full
+    JSON-RPC/TLS daemon will be added in a future release; the
+    stub is shipped now so the service contract and systemd
+    integration are in place.
   * debian/rules uses dh-cmake with cmake+ninja buildsystem and
     -DCLAUDEQT_SYSTEM_INTEGRATION=ON -DBUILD_TESTING=OFF.
   * claudeqt-remote postinst creates the dedicated system user
     `claudeqt` (home /var/lib/claudeqt, shell /usr/sbin/nologin),
-    generates a self-signed Ed25519 TLS cert under /etc/claudeqt/certs,
-    and prints state-aware NEXT STEPS hints per phase-1.md §7.5.
+    generates a self-signed Ed25519 TLS cert under
+    /etc/claudeqt/certs, and prints state-aware NEXT STEPS hints.
   * claudeqt-remote unit defaults to IPAddressDeny=any +
     IPAddressAllow=localhost; admins extend via drop-in files in
     /etc/systemd/system/claudeqt-remote.service.d/ (additive merge
     of IPAddressAllow= across drop-ins).
-  * Noble-only in Phase 1; Resolute upload will follow when the
-    port is validated. Version suffix `-0qt6~ppa1~noble1` keeps the
-    `qt6` marker (explicit signal that this is the Qt6 build path)
-    and the `~ppa<N>~<distro>N` HobbyCAD convention.
+  * Noble-only for this upload; Resolute upload will follow when
+    the port is validated. Version suffix `-0qt6~ppa1~noble1`
+    keeps the `qt6` marker (explicit signal that this is the Qt6
+    build path) and follows the `~ppa<N>~<distro>N` convention for
+    PPA revisions scoped to a specific Ubuntu series.
 
  -- Aaron Yourk <ayourk@gmail.com>  Mon, 13 Apr 2026 22:00:00 -0400

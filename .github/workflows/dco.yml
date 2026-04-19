@@ -1,5 +1,5 @@
 # DCO signoff check — each commit in a PR must carry a
-# 'Signed-off-by:' trailer matching the author. Copied from HobbyCAD.
+# 'Signed-off-by:' trailer matching the author.
 name: DCO
 
 on:

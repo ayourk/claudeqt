@@ -1,25 +1,61 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Phase 1 GUI stub per docs/phase-1.md §8.3. The real QMainWindow,
-// chat view, and engine wiring arrive in Phases 2-4. This file exists
-// so the top-level CMake graph has a real binary to produce and the
-// packaging path (debian/claudeqt.install + dh_shlibdeps) can be
-// validated end to end before we start writing the real application.
+// GUI entry point. Constructs Persistence (DB + migrations),
+// installs the Fusion QStyle, applies the Theme's palette + QSS
+// stylesheet, then shows MainWindow.
+//
+// setApplicationName() is the single fork hook that drives
+// everything downstream: QStandardPaths, the DB connection name,
+// MIME type suffixes, and the window title. organizationName is
+// deliberately unset so QStandardPaths::AppLocalDataLocation
+// resolves to $XDG_DATA_HOME/<app>/ on Linux. If both are set, Qt
+// nests <org>/<app>.
+#include "instancehub.h"
+#include "mainwindow.h"
+#include "persistence.h"
+#include "theme.h"
+
 #include <QApplication>
-#include <QLabel>
+#include <QIcon>
+#include <QStyleFactory>
 
 int main(int argc, char* argv[]) {
+    // Force-link the Qt resource bundle from the static ui lib —
+    // without this the linker drops qInitResources_resources and
+    // :/icons/app.svg is unreachable at runtime.
+    Q_INIT_RESOURCE(resources);
+
     QApplication app(argc, argv);
-    QApplication::setApplicationName("ClaudeQt");
-    QApplication::setOrganizationName("ClaudeQt");
-    QApplication::setApplicationVersion(CLAUDEQT_VERSION);
+    QApplication::setApplicationName(QString::fromLatin1(APP_NAME));
+    QApplication::setApplicationVersion(
+        QString::fromLatin1(APP_VERSION));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/app.svg")));
 
-    QLabel label(QStringLiteral("ClaudeQt %1 — Phase 1 scaffold")
-                     .arg(QString::fromLatin1(CLAUDEQT_VERSION)));
-    label.setAlignment(Qt::AlignCenter);
-    label.setMargin(24);
-    label.resize(420, 120);
-    label.show();
+    // Fusion is the only Qt style that honors palette + QSS
+    // consistently across Linux desktops.
+    QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
 
-    return QApplication::exec();
+    // Palette first, stylesheet second — QSS overrides the palette
+    // for widgets that use QSS, and palette handles the ones that
+    // don't (native file dialogs, some third-party widgets).
+    QPalette p = QApplication::palette();
+    Theme::instance().applyToPalette(p);
+    QApplication::setPalette(p);
+    qApp->setStyleSheet(Theme::instance().globalStyleSheet());
+
+    // Open the DB, run migrations. Any failure here is fatal — we
+    // can't usefully run without storage. The exception will unwind
+    // and terminate the process with a C++ runtime message.
+    (void) Persistence::instance();
+
+    auto& hub = InstanceHub::instance();
+    hub.start();
+    Persistence::instance().connectToHub();
+
+    MainWindow window;
+    window.show();
+
+    const int rc = QApplication::exec();
+    hub.shutdown();
+    return rc;
 }
